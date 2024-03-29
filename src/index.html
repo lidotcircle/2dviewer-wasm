@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>2D Data Viewer</title>
+    <link rel="stylesheet" href="css/font-awesome.min.css" />
+    <link rel="stylesheet" href="css/progress.css" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="title"><h1>2D Data Viewer</h1></div>
+      <div class="screen" id="fullviewport" tabindex="-1"><div id="viewport">
+          <canvas class="drawing" width="300" height="300"></canvas>
+          <canvas class="selection" width="300" height="300"></canvas>
+          <canvas class="selection-box" width="300" height="300"></canvas>
+          <canvas class="coordination" width="300" height="300"></canvas>
+      </div></div>
+      <div class="tools">
+        <div id="input-bar">
+          <input id="command-line-input" type="text" autocomplete="off"/>
+        </div>
+        <span id="error-bar"></span>
+        <button class="btn" id="fit-screen">
+          <i class="fa fa-arrows-alt fa-2x"></i>
+        </button>
+        <button class="btn" id="reset">
+          <i class="fa fa-refresh fa-2x"></i>
+        </button>
+        <button class="btn" id="scale-up">
+          <i class="fa fa-plus-circle fa-2x"></i>
+        </button>
+        <button class="btn" id="scale-down">
+          <i class="fa fa-minus-circle fa-2x"></i>
+        </button>
+        <button class="btn" id="move-left">
+          <i class="fa fa-arrow-circle-left fa-2x"></i>
+        </button>
+        <button class="btn" id="move-right">
+          <i class="fa fa-arrow-circle-right fa-2x"></i>
+        </button>
+        <button class="btn" id="move-up">
+          <i class="fa fa-arrow-circle-up fa-2x"></i>
+        </button>
+        <button class="btn" id="move-down">
+          <i class="fa fa-arrow-circle-down fa-2x"></i>
+        </button>
+        <span class="coordx"><span id="cursor-coordination">(0,0)</span></span>
+      </div>
+      <div class="controls">
+        <button class="btn" id="play">
+          <i class="fa fa-play fa-2x"></i>
+          <i class="fa fa-pause fa-2x"></i>
+        </button>
+        <button class="btn" id="stop">
+          <i class="fa fa-stop fa-2x"></i>
+        </button>
+        <input id="frame-per-second" type="number" value="1" min="1" max="60"/>
+        <input
+        type="range"
+        id="progress"
+        class="progress"
+        min="0"
+        max="100"
+        step="0.1"
+        value="0"
+        />
+        <span class="timestamp" id="timestamp">0/0</span>
+      </div>
+    </div>
+
+    <script src="scripts/rbush.js"></script>
+    <script src="scripts/main.js"></script>
+    {{{ SCRIPT }}}
+  </body>
+</html>
