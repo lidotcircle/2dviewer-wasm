@@ -8,6 +8,7 @@ on:
 
 jobs:
   BuildOnUbuntu:
+    permissions: write-all
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -33,7 +34,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: "./build/cmdcat"
+          artifacts: "build/dist.tar.gz"
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ steps.release.outputs.release }}
 
