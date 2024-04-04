@@ -7,15 +7,26 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if (CMAKE_BUILD_TYPE STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE STREQUAL "Debug") 
     get_filename_component(COMPILER_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
     set(EM_SYS_HEADER ${COMPILER_DIR}/cache/sysroot/include)
-    set(CMAKE_CXX_FLAGS "-I${EM_SYS_HEADER}")
-    set(CMAKE_C_FLAGS "-I${EM_SYS_HEADER}")
+    # set(CMAKE_CXX_FLAGS "-I${EM_SYS_HEADER}")
+    # set(CMAKE_C_FLAGS "-I${EM_SYS_HEADER}")
 endif()
 
 
 add_subdirectory(wasm-canvas)
+add_subdirectory(H2Geometry)
 
-add_library(MainEntry src/main.c)
+add_library(MainEntry
+    src/main.cpp
+    src/canvas_layer.cpp
+    src/commit.cpp
+    src/gobject.cpp
+    src/viewport.cpp
+    src/viewport_command.cpp
+)
+target_compile_features(MainEntry PRIVATE cxx_std_17)
 target_link_libraries(MainEntry PRIVATE HTMLCanvas)
+target_link_libraries(MainEntry PRIVATE H2Geometry)
+target_compile_definitions(MainEntry PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 
 
 set(HTMLTemplate ${CMAKE_CURRENT_LIST_DIR}/src/index.html)
@@ -33,7 +44,7 @@ add_custom_command(
 	-s ALLOW_MEMORY_GROWTH=1
 	-s AGGRESSIVE_VARIABLE_ELIMINATION=1
 	-s ABORTING_MALLOC=1
-	-s "EXPORTED_FUNCTIONS=['_main', '_malloc']"
+    -s "EXPORTED_FUNCTIONS=['_main', '_malloc']"
 	-s EXIT_RUNTIME=0
 	-s NO_FILESYSTEM=1
 	-s DISABLE_EXCEPTION_CATCHING=2

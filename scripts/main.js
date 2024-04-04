@@ -18,6 +18,13 @@ const moveUp = document.getElementById('move-up');
 const moveDown = document.getElementById('move-down');
 const cursorCoordination = document.getElementById('cursor-coordination');
 
+Module = {
+    async onRuntimeInitialized () {
+        let instance =  new Module.Viewport();
+        instance.OnScale(1, 1);
+        instance.OnResize(1, 1);
+    },
+};
 
 class AffineTransformation {
     constructor(a, b, c, d, tx, ty) {
@@ -1290,4 +1297,4 @@ async function setupConnection()
     };
 }
 
-setupConnection();
+// setupConnection();
