@@ -11,6 +11,7 @@
 #else
 #define MASSERT(cond)
 #define MUnreachable()
+#define MDEBUG_LOG(msg)
 #endif
 
 

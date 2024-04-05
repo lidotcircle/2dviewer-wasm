@@ -11,6 +11,21 @@ VirtualMachine::VirtualMachine():
     m_trueVal(std::make_unique<VMBooleanObject>(m_nextFreeId++, true)),
     m_falseVal(std::make_unique<VMBooleanObject>(m_nextFreeId++, false))
 {
+    m_status = VMStatus::Initialized;
+}
+
+void VirtualMachine::ExecuteModule(const ExecutionModule& module, const std::string& funcname)
+{
+    MASSERT(m_status == VMStatus::Initialized);
+    const auto initializer = LoadModule(module);
+    m_status = VMStatus::Running;
+    if (initializer) {
+        m_callstacks.emplace_back(std::make_unique<CallStack>(initializer, std::vector<VMObjectPtr>()));
+        this->MainLoop();
+        if (m_status != VMStatus::Exited || (m_exitStatus.has_value() && m_exitStatus.value() != 0)) {
+            VMPanic("fail to load executable module");
+        }
+    }
 }
 
 static auto VMGetInt(VMObjectPtr obj)
@@ -56,7 +71,7 @@ static bool VMConvertToBool(VMObjectPtr obj)
 
 void VirtualMachine::ExecuteInstruction(const VMInstruction& instruction)
 {
-    auto& callstack = GetActiveCallstack();
+    auto callstack = GetActiveCallstack();
     switch (instruction.m_opcode) {
     case VMOpcode::NOP:
         break;
@@ -84,12 +99,63 @@ void VirtualMachine::ExecuteInstruction(const VMInstruction& instruction)
         break;
     }
     case VMOpcode::CALL:
-    case VMOpcode::CALL_VARGS:
+    {
+        auto op1 = callstack->Get(instruction.m_operand1);
+        if (op1->type() != VMObjectType::Function) {
+            VMPanic("call to non-funciton object");
+            break;
+        }
+        auto func = static_cast<VMFunctionObject*>(&*op1);
+        if (func->isInternal()) {
+            func->invokeInternal(*this, *this->GetActiveCallstack());
+        } else {
+            MASSERT(instruction.m_operand2 >= 0);
+            const auto args = callstack->GetTopN(instruction.m_operand2);
+            if (func->isVarArgs()) {
+                auto array = CreateArray();
+                for (auto& a: args) {
+                    static_cast<VMArrayObject*>(&*array)->push(a);
+                }
+                m_callstacks.emplace_back(CallStack(func, {array}));
+            } else {
+                m_callstacks.emplace_back(CallStack(func, args));
+            }
+            return;
+        }
+        break;
+    }
+    case VMOpcode::CALL_MODULEFUNC:
+    {
+        auto func = callstack->GetModule()->GetNthFunction(instruction.m_operand1);;
+        auto idx = callstack->StackSize();
+        callstack->Push(VMObjectPtr(func));
+        return ExecuteInstruction(VMInstruction(VMOpcode::CALL, idx, instruction.m_operand2));
+    }
     case VMOpcode::DUP:
         callstack->Dup(instruction.m_operand1);;
         break;
     case VMOpcode::RET:
+    {
+        auto val = callstack->Get(instruction.m_operand1);
+        m_callstacks.pop_back();
+        if (m_callstacks.empty()) {
+            m_status = VMStatus::Exited;
+            if (val->type() == VMObjectType::Integer) {
+                m_exitStatus = VMGetInt(val);
+            }
+        } else {
+            GetActiveCallstack()->Push(val);
+        }
+        break;
+    }
     case VMOpcode::RETNULL:
+        m_callstacks.pop_back();
+        if (m_callstacks.empty()) {
+            m_status = VMStatus::Exited;
+        } else {
+            GetActiveCallstack()->Push(GetNull());
+        }
+        break;
     case VMOpcode::PUSHSTR:
         callstack->Push(CreateString(GetActiveModule().GetNthString(instruction.m_operand1)));
         break;
@@ -114,18 +180,89 @@ void VirtualMachine::ExecuteInstruction(const VMInstruction& instruction)
     case M2V::VMOpcode::PUSHOBJECT:
         callstack->Push(CreateObject());
         break;
+    case M2V::VMOpcode::CREATE_CLOSURE:
+        break;
     case VMOpcode::GLOBAL_GETVAR:
+    {
+        auto s = callstack->Get(instruction.m_operand1);
+        if (s->type() != VMObjectType::String) {
+            VMPanic("invalid key");
+            break;
+        }
+        const auto key = VMGetString(s);
+        if (m_globalObjects.count(key)) {
+            callstack->Push(m_globalObjects.at(key));
+        } else {
+            VMPanic("undefine variable '" + key + "'");
+        }
+        break;
+    }
     case VMOpcode::GLOBAL_SETVAR:
+    {
+        auto s = callstack->Get(instruction.m_operand1);
+        if (s->type() != VMObjectType::String) {
+            VMPanic("invalid key");
+            break;
+        }
+        const auto key = VMGetString(s);
+        m_globalObjects[key] = callstack->Get(instruction.m_operand2);
+        break;
+    }
     case VMOpcode::MODULE_GETVAR:
+    {
+        auto s = callstack->Get(instruction.m_operand1);
+        if (s->type() != VMObjectType::String) {
+            VMPanic("invalid key");
+            break;
+        }
+        const auto key = VMGetString(s);
+        auto varOpt = callstack->GetModule()->GetModuleVariable(key);
+        if (varOpt.has_value()) {
+            callstack->Push(varOpt.value());
+        } else {
+            VMPanic("undefine variable '" + key + "'");
+        }
+        break;
+    }
     case VMOpcode::MODULE_SETVAR:
+    {
+        auto s = callstack->Get(instruction.m_operand1);
+        if (s->type() != VMObjectType::String) {
+            VMPanic("invalid key");
+            break;
+        }
+        const auto key = VMGetString(s);
+        callstack->GetModule()->SetModuleVariable(key, callstack->Get(instruction.m_operand2));
+        break;
+    }
     case VMOpcode::LOAD_MODULE:
     {
         auto v1 = callstack->Get(instruction.m_operand1);
+        if (v1->type() != VMObjectType::String) {
+            VMPanic("fail to load module");
+        }
+        const auto s = VMGetString(v1);
+        if (m_modules.count(s)) {
+            callstack->Push(VMObjectPtr(m_modules.at(s)));
+            callstack->Push(GetNull());
+            callstack->Push(GetNull());
+        } else {
+            auto func = this->LoadModuleFromFile(s);
+            MASSERT(m_modules.count(s));
+            callstack->Push(VMObjectPtr(m_modules.at(s)));
+            if (m_status == VMStatus::Running && func) {
+                const uint16_t idx = callstack->StackSize();
+                callstack->Push(VMObjectPtr(func));
+                this->ExecuteInstruction(VMInstruction(VMOpcode::CALL, idx, 0));
+            }
+        }
         break;
     }
+
     case VMOpcode::BEGIN_FUNCTION:
     case VMOpcode::END_FUNCTION:
         break;
+
     case VMOpcode::JMP_TRUE:
     case VMOpcode::JMP_FLASE:
     {
@@ -297,12 +434,24 @@ void VirtualMachine::MainLoop()
         ExecuteInstruction(instruction);
         instructionCount++;
 
-        if (instructionCount % 10000000 == 0) {
+        if (instructionCount % 10000000 == 0 && m_status == VMStatus::Running) {
             m_status = VMStatus::GC;
             RunGarbageColletion();
             m_status = VMStatus::Running;
         }
     }
+}
+
+VMFunctionObject* VirtualMachine::LoadModule(const ExecutionModule& module)
+{
+    auto mod = CreateModule(module.GetModuleName(), module);
+    auto m = static_cast<VMModuleObject*>(&*mod);
+    return m->GetInitializer();
+}
+
+VMFunctionObject* VirtualMachine::LoadModuleFromFile(const std::string& moduleName)
+{
+    return nullptr;
 }
 
 void VirtualMachine::RunGarbageColletion()
