@@ -20,6 +20,7 @@ public:
     void OnResize(int viewportXSize, int viewportYSize);
     void OnSelect(Point from, Point to);
     void OnDelete();
+    void OnCommand(const std::string& cmd);
 
     Viewport():
         m_freeLayerId(1), m_freeObjectId(1) {}

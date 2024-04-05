@@ -18,5 +18,6 @@ EMSCRIPTEN_BINDINGS(Magic2DViewer) {
     emscripten::class_<M2V::Viewport>("Viewport")
         .constructor<>()
         .function("OnResize", &M2V::Viewport::OnResize)
-        .function("OnScale",  &M2V::Viewport::OnScale);
+        .function("OnScale",  &M2V::Viewport::OnScale)
+        .function("OnCommand",  &M2V::Viewport::OnCommand);
 }

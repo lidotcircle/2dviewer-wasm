@@ -12,20 +12,21 @@ if (CMAKE_BUILD_TYPE STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 
-add_subdirectory(wasm-canvas)
-add_subdirectory(H2Geometry)
+add_subdirectory(thirdparty)
 
 add_library(MainEntry
     src/main.cpp
     src/canvas_layer.cpp
     src/commit.cpp
     src/gobject.cpp
+    src/gobject_parser.cpp
     src/viewport.cpp
     src/viewport_command.cpp
 )
 target_compile_features(MainEntry PRIVATE cxx_std_17)
 target_link_libraries(MainEntry PRIVATE HTMLCanvas)
 target_link_libraries(MainEntry PRIVATE H2Geometry)
+target_link_libraries(MainEntry PRIVATE dcparse)
 target_compile_definitions(MainEntry PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 
 

@@ -48,6 +48,10 @@ void Viewport::OnDelete()
 {
     MDEBUG_LOG("on delete");
 }
+void Viewport::OnCommand(const std::string& cmd)
+{
+    MDEBUG_LOG("on command '" + cmd + "'");
+}
 
 LayerID Viewport::CreateLayer(const std::string& layerName)
 {
