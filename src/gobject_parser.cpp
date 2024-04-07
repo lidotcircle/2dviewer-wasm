@@ -38,9 +38,8 @@ struct TokenStringLiteral: public LexerToken {
 };
 
 #define GOBJ_KEYWORD_LIST \
-    K_ENTRY(if) \
     K_ENTRY(let) \
-    K_ENTRY(loop)
+    K_ENTRY(def)
 
 #define K_ENTRY(n) \
     struct TokenKeyword_##n: public LexerToken { \
@@ -50,9 +49,11 @@ GOBJ_KEYWORD_LIST
 #undef K_ENTRY
 
 
-#define GOBJ_PUNCTUATOR_LIST \
+#define GOBJ_PUNCTUATOR_LIST(P_ENTRY) \
     P_ENTRY(LPAREN, "\\(") \
-    P_ENTRY(RPAREN, "\\)") \
+    P_ENTRY(RPAREN, "\\)")
+
+#define GOBJ_BINARY_OPS(P_ENTRY) \
     P_ENTRY(PLUS, "\\+") \
     P_ENTRY(MINUS, "\\-") \
     P_ENTRY(MULTIPLY, "\\*") \
@@ -78,7 +79,8 @@ GOBJ_KEYWORD_LIST
         inline TokenPunc##n(): \
             LexerToken() {} \
     };
-GOBJ_PUNCTUATOR_LIST
+GOBJ_PUNCTUATOR_LIST(P_ENTRY)
+GOBJ_BINARY_OPS(P_ENTRY)
 #undef P_ENTRY
 
 static bool string_start_with(const std::string& str, const std::string& prefix)
@@ -219,7 +221,7 @@ GOBJ_KEYWORD_LIST
                 return std::make_shared<TokenPunc##n>(); \
             }) \
     );
-GOBJ_PUNCTUATOR_LIST
+GOBJ_PUNCTUATOR_LIST(P_ENTRY)
 #undef P_ENTRY
 
     lexer->dec_priority_minor();
@@ -284,15 +286,235 @@ public:
     virtual ~ASTNode() = default;
 };
 
+class ASTExprNode: public ASTNode { };
+
+class ASTExprListNode: public ASTNode {
+public:
+    ASTExprListNode() {}
+
+    std::vector<std::shared_ptr<ASTExprNode>> m_exprs;
+};
+
+class ASTIDListNode: public ASTNode {
+public:
+    ASTIDListNode() {}
+
+    std::vector<std::string> m_ids;
+};
+
+class ASTFuncExprNode: public ASTExprNode {
+public:
+    ASTFuncExprNode(const std::string& func, std::vector<std::shared_ptr<ASTExprNode>> args):
+        m_func(func), m_args(args) {}
+
+private:
+    std::string m_func;
+    std::vector<std::shared_ptr<ASTExprNode>> m_args;
+};
+
+class ASTFuncDefExprNode: public ASTExprNode {
+public:
+    ASTFuncDefExprNode(const std::string& funcname, std::vector<std::string> parameters, std::vector<std::shared_ptr<ASTExprNode>> exprs):
+        m_funcname(), m_parameters(parameters), m_exprs(exprs) {}
+
+private:
+    std::string m_funcname;
+    std::vector<std::string> m_parameters;
+    std::vector<std::shared_ptr<ASTExprNode>> m_exprs;
+};
+
+class ASTMinusExprNode: public ASTExprNode {
+public:
+    ASTMinusExprNode(std::shared_ptr<ASTExprNode> expr):
+        m_expr(expr) {}
+
+public:
+    std::shared_ptr<ASTExprNode> m_expr;
+};
+
+class ASTLetExprNode: public ASTExprNode {
+public:
+    ASTLetExprNode(const std::string& id, std::shared_ptr<ASTExprNode> expr):
+        m_id(id), m_expr(expr) {}
+
+public:
+    std::string m_id;
+    std::shared_ptr<ASTExprNode> m_expr;
+};
+
+class ASTBinaryOpExprNode: public ASTExprNode {
+public:
+    ASTBinaryOpExprNode(const std::string& op, std::shared_ptr<ASTExprNode> left, std::shared_ptr<ASTExprNode> right):
+        m_op(op), m_left(left), m_right(right) {}
+
+public:
+    std::string m_op;
+    std::shared_ptr<ASTExprNode> m_left, m_right;
+};
+
+class ASTIntExprNode: public ASTExprNode {
+public:
+    ASTIntExprNode(int64_t val): m_value(val) {}
+
+private:
+    int64_t m_value;
+};
+
+class ASTFloatExprNode: public ASTExprNode {
+public:
+    ASTFloatExprNode(double val): m_value(val) {}
+
+private:
+    double m_value;
+};
+
+class ASTStringExprNode: public ASTExprNode {
+public:
+    ASTStringExprNode(const std::string& val): m_value(val) {}
+
+private:
+    std::string m_value;
+};
+
+class ASTIDExprNode: public ASTExprNode {
+public:
+    ASTIDExprNode(const std::string& id): m_id(id) {}
+
+private:
+    std::string m_id;
+};
+
 struct NonTermBasic: public NonTerminal {
     std::shared_ptr<ASTNode> m_astnode;
     inline NonTermBasic(std::shared_ptr<ASTNode> node): m_astnode(node) {}
 };
 
+#define NONTERMS \
+    TENTRY(EXPRESSION) \
+    TENTRY(ID_LIST) \
+    TENTRY(EXPRESSION_LIST) \
+    TENTRY(MODULE)
+
+#define TENTRY(n) \
+    struct NonTerm##n: public NonTermBasic { \
+        inline NonTerm##n(std::shared_ptr<ASTNode> node): NonTermBasic(node) {} \
+    };
+NONTERMS
+#undef TENTRY
+
+#define NI(t) CharInfo<NonTerm##t>()
+#define TI(t) CharInfo<Token##t>()
+#define KW(t) CharInfo<TokenKeyword_##t>()
+#define PT(t) CharInfo<TokenPunc##t>()
+
 static std::unique_ptr<DCParser> createParser()
 {
-    auto parser = std::make_unique<DCParser>();
-    return parser;
+    auto parserPtr = std::make_unique<DCParser>();
+    auto& parser = *parserPtr;
+    parser(NI(EXPRESSION), {PT(LPAREN), KW(let), TI(ID), NI(EXPRESSION), PT(RPAREN)}, [](auto c, auto ts) {
+        assert(ts.size() == 5);
+        const std::shared_ptr<TokenID> id = std::dynamic_pointer_cast<TokenID>(ts.at(2));
+        const auto expr = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(3));
+        const auto exprNode = std::dynamic_pointer_cast<ASTExprNode>(expr->m_astnode);
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTLetExprNode>(id->m_id, exprNode));
+    });
+    parser(NI(EXPRESSION), {PT(MINUS), NI(EXPRESSION)}, [](auto c, auto ts) {
+        assert(ts.size() == 2);
+        const auto expr = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(1));
+        const auto exprNode = std::dynamic_pointer_cast<ASTExprNode>(expr->m_astnode);
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTMinusExprNode>(exprNode));
+    });
+    parser(NI(EXPRESSION), {TI(ConstantFloat)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const std::shared_ptr<TokenConstantFloat> expr = std::dynamic_pointer_cast<TokenConstantFloat>(ts.at(0));
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTFloatExprNode>(expr->m_value));
+    });
+    parser(NI(EXPRESSION), {TI(ConstantInteger)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const std::shared_ptr<TokenConstantInteger> expr = std::dynamic_pointer_cast<TokenConstantInteger>(ts.at(0));
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTIntExprNode>(expr->m_value));
+    });
+    parser(NI(EXPRESSION), {TI(StringLiteral)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const std::shared_ptr<TokenStringLiteral> expr = std::dynamic_pointer_cast<TokenStringLiteral>(ts.at(0));
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTStringExprNode>(expr->m_value));
+    });
+    parser(NI(EXPRESSION), {TI(ID)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const std::shared_ptr<TokenID> expr = std::dynamic_pointer_cast<TokenID>(ts.at(0));
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTStringExprNode>(expr->m_id));
+    });
+
+#define P_ENTRY(n, s) \
+    parser(NI(EXPRESSION), {PT(LPAREN), PT(n), NI(EXPRESSION), NI(EXPRESSION), PT(RPAREN)}, [](auto c, auto ts) { \
+        assert(ts.size() == 5); \
+        const auto expr1 = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(2)); \
+        const auto expr2 = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(3)); \
+        const auto exprNode1 = std::dynamic_pointer_cast<ASTExprNode>(expr1->m_astnode); \
+        const auto exprNode2 = std::dynamic_pointer_cast<ASTExprNode>(expr2->m_astnode); \
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTBinaryOpExprNode>(s, exprNode1, exprNode2)); \
+    });
+    GOBJ_BINARY_OPS(P_ENTRY)
+#undef BINARY_OPS
+
+    parser(NI(EXPRESSION_LIST), {NI(EXPRESSION)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const auto expr = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(0));
+        const std::shared_ptr<ASTExprNode> exprNode = std::dynamic_pointer_cast<ASTExprNode>(expr->m_astnode);
+        auto list = std::make_shared<ASTExprListNode>();
+        list->m_exprs.push_back(exprNode);
+        return std::make_shared<NonTermEXPRESSION_LIST>(list);
+    });
+
+    parser(NI(EXPRESSION_LIST), {NI(EXPRESSION_LIST), NI(EXPRESSION)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const auto listt = std::dynamic_pointer_cast<NonTermEXPRESSION_LIST>(ts.at(0));
+        const auto list = std::dynamic_pointer_cast<ASTExprListNode>(listt->m_astnode);
+        const auto expr = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(1));
+        const std::shared_ptr<ASTExprNode> exprNode = std::dynamic_pointer_cast<ASTExprNode>(expr->m_astnode);
+        list->m_exprs.push_back(exprNode);
+        return std::make_shared<NonTermEXPRESSION_LIST>(list);
+    });
+
+    parser(NI(EXPRESSION), {PT(LPAREN), TI(ID), ParserChar::beOptional(NI(EXPRESSION_LIST)), PT(RPAREN)}, [](auto c, auto ts) {
+        assert(ts.size() == 4);
+        const std::shared_ptr<TokenID> id = std::dynamic_pointer_cast<TokenID>(ts.at(1));
+        const auto exprList = std::dynamic_pointer_cast<NonTermEXPRESSION_LIST>(ts.at(2));
+        const auto exprListNode = std::dynamic_pointer_cast<ASTExprListNode>(exprList);
+        const auto exprs = exprListNode ? exprListNode->m_exprs : std::vector<std::shared_ptr<ASTExprNode>>();
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTFuncExprNode>(id->m_id, exprs));
+    });
+
+    parser(NI(ID_LIST), {TI(ID)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const auto id = std::dynamic_pointer_cast<TokenID>(ts.at(0));
+        auto list = std::make_shared<ASTIDListNode>();
+        list->m_ids.push_back(id->m_id);
+        return std::make_shared<NonTermID_LIST>(list);
+    });
+
+    parser(NI(ID_LIST), {NI(ID_LIST), TI(ID)}, [](auto c, auto ts) {
+        assert(ts.size() == 1);
+        const auto listt = std::dynamic_pointer_cast<NonTermID_LIST>(ts.at(0));
+        const auto list = std::dynamic_pointer_cast<ASTIDListNode>(listt->m_astnode);
+        const auto id = std::dynamic_pointer_cast<TokenID>(ts.at(1));
+        list->m_ids.push_back(id->m_id);
+        return std::make_shared<NonTermEXPRESSION_LIST>(list);
+    });
+
+    parser(NI(EXPRESSION), {PT(LPAREN), KW(def), TI(ID), PT(LPAREN), ParserChar::beOptional(NI(ID_LIST)), PT(RPAREN), ParserChar::beOptional(NI(EXPRESSION_LIST)), PT(RPAREN)}, [](auto c, auto ts) {
+        assert(ts.size() == 8);
+        const std::shared_ptr<TokenID> id = std::dynamic_pointer_cast<TokenID>(ts.at(2));
+        const auto parameters = std::dynamic_pointer_cast<NonTermID_LIST>(ts.at(4));
+        const auto parametersNode = std::dynamic_pointer_cast<ASTIDListNode>(parameters->m_astnode);
+        const auto exprList = std::dynamic_pointer_cast<NonTermEXPRESSION_LIST>(ts.at(6));
+        const auto exprListNode = std::dynamic_pointer_cast<ASTExprListNode>(exprList->m_astnode);
+        const auto ids = parametersNode ? parametersNode->m_ids : std::vector<std::string>();
+        const auto exprs = exprListNode ? exprListNode->m_exprs : std::vector<std::shared_ptr<ASTExprNode>>();
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTFuncDefExprNode>(id->m_id, ids, exprs));
+    });
+
+    return parserPtr;
 }
 
 GObjectParser::GObjectParser():
