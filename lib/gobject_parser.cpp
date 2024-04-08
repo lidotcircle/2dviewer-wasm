@@ -1,4 +1,5 @@
 #include "gobject_parser.h"
+#include "dcutf8.h"
 #include <dcparse.hpp>
 #include <lexer/lexer_rule_regex.hpp>
 using namespace M2V;
@@ -281,109 +282,6 @@ GOBJ_PUNCTUATOR_LIST(P_ENTRY)
     return lexer;
 }
 
-class ASTNode {
-public:
-    virtual ~ASTNode() = default;
-};
-
-class ASTExprNode: public ASTNode { };
-
-class ASTExprListNode: public ASTNode {
-public:
-    ASTExprListNode() {}
-
-    std::vector<std::shared_ptr<ASTExprNode>> m_exprs;
-};
-
-class ASTIDListNode: public ASTNode {
-public:
-    ASTIDListNode() {}
-
-    std::vector<std::string> m_ids;
-};
-
-class ASTFuncExprNode: public ASTExprNode {
-public:
-    ASTFuncExprNode(const std::string& func, std::vector<std::shared_ptr<ASTExprNode>> args):
-        m_func(func), m_args(args) {}
-
-private:
-    std::string m_func;
-    std::vector<std::shared_ptr<ASTExprNode>> m_args;
-};
-
-class ASTFuncDefExprNode: public ASTExprNode {
-public:
-    ASTFuncDefExprNode(const std::string& funcname, std::vector<std::string> parameters, std::vector<std::shared_ptr<ASTExprNode>> exprs):
-        m_funcname(), m_parameters(parameters), m_exprs(exprs) {}
-
-private:
-    std::string m_funcname;
-    std::vector<std::string> m_parameters;
-    std::vector<std::shared_ptr<ASTExprNode>> m_exprs;
-};
-
-class ASTMinusExprNode: public ASTExprNode {
-public:
-    ASTMinusExprNode(std::shared_ptr<ASTExprNode> expr):
-        m_expr(expr) {}
-
-public:
-    std::shared_ptr<ASTExprNode> m_expr;
-};
-
-class ASTLetExprNode: public ASTExprNode {
-public:
-    ASTLetExprNode(const std::string& id, std::shared_ptr<ASTExprNode> expr):
-        m_id(id), m_expr(expr) {}
-
-public:
-    std::string m_id;
-    std::shared_ptr<ASTExprNode> m_expr;
-};
-
-class ASTBinaryOpExprNode: public ASTExprNode {
-public:
-    ASTBinaryOpExprNode(const std::string& op, std::shared_ptr<ASTExprNode> left, std::shared_ptr<ASTExprNode> right):
-        m_op(op), m_left(left), m_right(right) {}
-
-public:
-    std::string m_op;
-    std::shared_ptr<ASTExprNode> m_left, m_right;
-};
-
-class ASTIntExprNode: public ASTExprNode {
-public:
-    ASTIntExprNode(int64_t val): m_value(val) {}
-
-private:
-    int64_t m_value;
-};
-
-class ASTFloatExprNode: public ASTExprNode {
-public:
-    ASTFloatExprNode(double val): m_value(val) {}
-
-private:
-    double m_value;
-};
-
-class ASTStringExprNode: public ASTExprNode {
-public:
-    ASTStringExprNode(const std::string& val): m_value(val) {}
-
-private:
-    std::string m_value;
-};
-
-class ASTIDExprNode: public ASTExprNode {
-public:
-    ASTIDExprNode(const std::string& id): m_id(id) {}
-
-private:
-    std::string m_id;
-};
-
 struct NonTermBasic: public NonTerminal {
     std::shared_ptr<ASTNode> m_astnode;
     inline NonTermBasic(std::shared_ptr<ASTNode> node): m_astnode(node) {}
@@ -514,6 +412,20 @@ static std::unique_ptr<DCParser> createParser()
         return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTFuncDefExprNode>(id->m_id, ids, exprs));
     });
 
+    parser( NI(MODULE),
+        { ParserChar::beOptional(NI(MODULE)), NI(EXPRESSION) },
+        [](auto c, auto ts) {
+            assert(ts.size() == 2);
+            const auto moduleX = std::dynamic_pointer_cast<NonTermMODULE>(ts.at(0));
+            const auto module = moduleX ? std::dynamic_pointer_cast<ASTModuleNode>(moduleX->m_astnode) : std::make_unique<ASTModuleNode>();
+            const auto expr = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(1));
+            const std::shared_ptr<ASTExprNode> exprNode = std::dynamic_pointer_cast<ASTExprNode>(expr->m_astnode);
+            module->PushExpression(exprNode);
+            return std::make_shared<NonTermMODULE>(module);
+        });
+
+    parser.add_start_symbol(NI(MODULE).id);
+
     return parserPtr;
 }
 
@@ -521,3 +433,29 @@ GObjectParser::GObjectParser():
     m_lexer(createTokenizer()), m_parser(createParser())
 {
 }
+
+std::shared_ptr<ASTModuleNode>
+GObjectParser::parse(const std::string& str)
+{
+    const auto cstr = UTF8Decoder::strdecode(str);
+    for (auto& c: cstr) {
+        auto tokens = m_lexer->feed_char(c);
+        for (auto& t: tokens) {
+            m_parser->feed(t);
+        }
+    }
+    auto tokens = m_lexer->feed_end();
+    for (auto& t: tokens) {
+        m_parser->feed(t);
+    }
+    auto nonterm = m_parser->end();
+    auto module = std::dynamic_pointer_cast<NonTermMODULE>(nonterm);
+    return std::dynamic_pointer_cast<ASTModuleNode>(module->m_astnode);
+}
+
+void GObjectParser::reset()
+{
+    m_lexer->reset();
+    m_parser->reset();
+}
+
