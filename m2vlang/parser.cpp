@@ -223,6 +223,7 @@ GOBJ_KEYWORD_LIST
             }) \
     );
 GOBJ_PUNCTUATOR_LIST(P_ENTRY)
+GOBJ_BINARY_OPS(P_ENTRY)
 #undef P_ENTRY
 
     lexer->dec_priority_minor();
@@ -277,6 +278,16 @@ GOBJ_PUNCTUATOR_LIST(P_ENTRY)
             const long double value = std::stold(u2s(str));
             return std::make_shared<TokenConstantFloat>(value);
         })
+    );
+
+    // ignore space
+    lexer->dec_priority_major();
+    lexer->add_rule(
+        std::make_unique<LexerRuleRegex<int>>(
+            s2u("[ \t\v\f\r\n]+"),
+            [](auto str, auto info) {
+                return nullptr;
+            })
     );
 
     return lexer;
@@ -340,7 +351,7 @@ static std::unique_ptr<DCParser> createParser()
     parser(NI(EXPRESSION), {TI(ID)}, [](auto c, auto ts) {
         assert(ts.size() == 1);
         const std::shared_ptr<TokenID> expr = std::dynamic_pointer_cast<TokenID>(ts.at(0));
-        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTStringExprNode>(expr->m_id));
+        return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTIDExprNode>(expr->m_id));
     });
 
 #define P_ENTRY(n, s) \
@@ -365,7 +376,7 @@ static std::unique_ptr<DCParser> createParser()
     });
 
     parser(NI(EXPRESSION_LIST), {NI(EXPRESSION_LIST), NI(EXPRESSION)}, [](auto c, auto ts) {
-        assert(ts.size() == 1);
+        assert(ts.size() == 2);
         const auto listt = std::dynamic_pointer_cast<NonTermEXPRESSION_LIST>(ts.at(0));
         const auto list = std::dynamic_pointer_cast<ASTExprListNode>(listt->m_astnode);
         const auto expr = std::dynamic_pointer_cast<NonTermEXPRESSION>(ts.at(1));
@@ -378,7 +389,7 @@ static std::unique_ptr<DCParser> createParser()
         assert(ts.size() == 4);
         const std::shared_ptr<TokenID> id = std::dynamic_pointer_cast<TokenID>(ts.at(1));
         const auto exprList = std::dynamic_pointer_cast<NonTermEXPRESSION_LIST>(ts.at(2));
-        const auto exprListNode = std::dynamic_pointer_cast<ASTExprListNode>(exprList);
+        const auto exprListNode = exprList ? std::dynamic_pointer_cast<ASTExprListNode>(exprList->m_astnode) : nullptr;
         const auto exprs = exprListNode ? exprListNode->m_exprs : std::vector<std::shared_ptr<ASTExprNode>>();
         return std::make_shared<NonTermEXPRESSION>(std::make_shared<ASTFuncExprNode>(id->m_id, exprs));
     });
@@ -392,19 +403,19 @@ static std::unique_ptr<DCParser> createParser()
     });
 
     parser(NI(ID_LIST), {NI(ID_LIST), TI(ID)}, [](auto c, auto ts) {
-        assert(ts.size() == 1);
+        assert(ts.size() == 2);
         const auto listt = std::dynamic_pointer_cast<NonTermID_LIST>(ts.at(0));
         const auto list = std::dynamic_pointer_cast<ASTIDListNode>(listt->m_astnode);
         const auto id = std::dynamic_pointer_cast<TokenID>(ts.at(1));
         list->m_ids.push_back(id->m_id);
-        return std::make_shared<NonTermEXPRESSION_LIST>(list);
+        return std::make_shared<NonTermID_LIST>(list);
     });
 
     parser(NI(EXPRESSION), {PT(LPAREN), KW(def), TI(ID), PT(LPAREN), ParserChar::beOptional(NI(ID_LIST)), PT(RPAREN), ParserChar::beOptional(NI(EXPRESSION_LIST)), PT(RPAREN)}, [](auto c, auto ts) {
         assert(ts.size() == 8);
         const std::shared_ptr<TokenID> id = std::dynamic_pointer_cast<TokenID>(ts.at(2));
         const auto parameters = std::dynamic_pointer_cast<NonTermID_LIST>(ts.at(4));
-        const auto parametersNode = std::dynamic_pointer_cast<ASTIDListNode>(parameters->m_astnode);
+        const auto parametersNode = parameters ? std::dynamic_pointer_cast<ASTIDListNode>(parameters->m_astnode) : nullptr;
         const auto exprList = std::dynamic_pointer_cast<NonTermEXPRESSION_LIST>(ts.at(6));
         const auto exprListNode = std::dynamic_pointer_cast<ASTExprListNode>(exprList->m_astnode);
         const auto ids = parametersNode ? parametersNode->m_ids : std::vector<std::string>();
@@ -425,6 +436,7 @@ static std::unique_ptr<DCParser> createParser()
         });
 
     parser.add_start_symbol(NI(MODULE).id);
+    parser.generate_table();
 
     return parserPtr;
 }
