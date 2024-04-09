@@ -116,9 +116,9 @@ void VirtualMachine::ExecuteInstruction(const VMInstruction& instruction)
                 for (auto& a: args) {
                     static_cast<VMArrayObject*>(&*array)->push(a);
                 }
-                m_callstacks.emplace_back(CallStack(func, {array}));
+                m_callstacks.emplace_back(std::make_unique<CallStack>(func, std::vector<VMObjectPtr>{array}));
             } else {
-                m_callstacks.emplace_back(CallStack(func, args));
+                m_callstacks.emplace_back(std::make_unique<CallStack>(func, args));
             }
             return;
         }
@@ -205,7 +205,11 @@ void VirtualMachine::ExecuteInstruction(const VMInstruction& instruction)
             break;
         }
         const auto key = VMGetString(s);
-        m_globalObjects[key] = callstack->Get(instruction.m_operand2);
+        if (m_globalObjects.count(key)) {
+            m_globalObjects.at(key) = callstack->Get(instruction.m_operand2);
+        } else {
+            m_globalObjects.insert({key, callstack->Get(instruction.m_operand2)});
+        }
         break;
     }
     case VMOpcode::MODULE_GETVAR:

@@ -136,6 +136,8 @@ public:
 
     void reset();
 
+    ~GObjectParser();
+
 private:
     std::unique_ptr<Lexer<int>> m_lexer;
     std::unique_ptr<DCParser>   m_parser;

@@ -13,19 +13,19 @@ endif()
 
 
 add_subdirectory(thirdparty)
+add_subdirectory(m2vlang)
 
 add_library(M2V STATIC
     lib/canvas_layer.cpp
     lib/commit.cpp
     lib/gobject.cpp
-    lib/gobject_parser.cpp
     lib/viewport.cpp
     lib/viewport_command.cpp
 )
 target_compile_features(M2V PRIVATE cxx_std_17)
 target_link_libraries(M2V PRIVATE HTMLCanvas)
 target_link_libraries(M2V PRIVATE H2Geometry)
-target_link_libraries(M2V PRIVATE dcparse)
+target_link_libraries(M2V PUBLIC M2VLang)
 target_include_directories(M2V PUBLIC ${CMAKE_CURRENT_LIST_DIR}/lib)
 target_compile_definitions(M2V PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 
@@ -34,7 +34,6 @@ target_compile_features(MainEntry PRIVATE cxx_std_17)
 target_link_libraries(MainEntry PRIVATE M2V)
 target_link_libraries(MainEntry PRIVATE HTMLCanvas)
 target_link_libraries(MainEntry PRIVATE H2Geometry)
-target_link_libraries(MainEntry PRIVATE dcparse)
 target_compile_definitions(MainEntry PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 
 

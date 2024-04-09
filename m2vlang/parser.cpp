@@ -1,4 +1,4 @@
-#include "gobject_parser.h"
+#include "parser.h"
 #include "dcutf8.h"
 #include <dcparse.hpp>
 #include <lexer/lexer_rule_regex.hpp>
@@ -459,3 +459,4 @@ void GObjectParser::reset()
     m_parser->reset();
 }
 
+GObjectParser::~GObjectParser(){}
